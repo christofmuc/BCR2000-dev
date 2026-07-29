@@ -7,7 +7,14 @@ contains the tools generate these midi messages from a firmware image and vice
 versa, and to upload them.
 For building custom software for this device, please see README.firmware.
 
-Requires Python.
+Requires Python 3.10 or newer.
+
+Run the automated tests with:
+  $ python3 -m unittest discover -s tests -v
+
+The test suite uses synthetic data. Set BCR2000_FIRMWARE to the path of a
+locally supplied official BCR2000 1.10 SYX file to enable its optional
+byte-for-byte compatibility test.
 
                         --- IMPORTANT NOTE ----
 This software is unofficial and based on reverse engineering efforts. Although
@@ -48,25 +55,26 @@ non-unix-like systems as it needs a device file to read and write from.
 ** Examples
 
 Convert an existing midi firmware file to an operating system image
-  $ bcfwconvert -i bcf2000_1-07.syx -I syx -o bcf2000_1-07.bin -O os
+  $ python3 bcfwconvert.py -i bcf2000_1-07.syx -I syx -o bcf2000_1-07.bin -O os
 
 Compile an assembly program and generate a sysex file to program the device
   $ arm-as -o test.elf test.S
   $ arm-objcopy -O binary test.elf test.bin
-  $ bcfwconvert -i test.bin -I os -o test.syx -O syx
+  $ python3 bcfwconvert.py -i test.bin -I os -o test.syx -O syx
 
 Detect attached Behringer Control devices (BCF2000 attached via USB)
-  $ bcfwflash -l
+  $ python3 bcfwflash.py -l
   /dev/snd/midiC1D0:	BCF2000 1.10
 
 Upload a midi firmware file to the first detected device
-  $ bcfwflash -u -i bcf2000_1-07.syx
+  $ python3 bcfwflash.py -u -i bcf2000_1-07.syx
 
 Flash an operating system image directly to the specified midi port
-  $ bcfwconvert -i test.bin -I os -O syx | bcfwflash -u -d /dev/midi0
+  $ python3 bcfwconvert.py -i test.bin -I os -O syx | \
+      python3 bcfwflash.py -u -d /dev/midi0
 
 Display the string "ABBA" on the device's display
-  $ bcfwflash -p ABBA
+  $ python3 bcfwflash.py -p ABBA
 
 
 ** Authors

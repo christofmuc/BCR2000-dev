@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+
+# Official firmware is copyrighted and must be supplied by the user.
+bcr2000_*.syx
+bcf2000_*.syx
+
+# Generated firmware build products.
+firmware/**/*.bin
+firmware/**/*.elf
+firmware/**/*.o
+firmware/**/*.syx
+firmware/**/model.h
+

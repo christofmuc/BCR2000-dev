@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  ARM disassembly annotation extractor
 # 
@@ -40,8 +40,8 @@ Usage: %s [-h] [-f] [-i input_file] [-o out_file]
 
 def line(addr, cmd, outf):
 	'''output a line or pop multiple lines if cmd is array'''
-	if hasattr(cmd, '__iter__'):
-			while len(cmd)>0: line(addr, cmd.pop(0), outf)
+	if isinstance(cmd, list):
+		while len(cmd)>0: line(addr, cmd.pop(0), outf)
 	else:
 		outf.write("%x: %s\n"%(addr, cmd))
 
@@ -113,7 +113,12 @@ def parse_diss(inf, outf):
 
 		# data
 		for q in (('.byte','2'), ('.short','4'), ('.word','8')):
-			m = re.match(r'\s*([0-9a-f]+):(\s+'+q[0]+')?\s*((\s+[0-9a-f]{'+q[1]+'}(\s*\*\s*[0-9]+)?(\s*,)?)+)(\s*;.*)?$', l)
+			pattern = (
+				rf'\s*([0-9a-f]+):(\s+{re.escape(q[0])})?\s*'
+				rf'((\s+[0-9a-f]{{{q[1]}}}(\s*\*\s*[0-9]+)?'
+				rf'(\s*,)?)+)(\s*;.*)?$'
+			)
+			m = re.match(pattern, l)
 			if m:
 				addr = int(m.group(1),16)
 				data = m.group(3)
@@ -174,8 +179,8 @@ if __name__ == "__main__":
     #
     if infile:
         try:
-            inf = open(infile, 'rb')
-        except:
+            inf = open(infile, 'r', encoding='utf-8')
+        except OSError:
             sys.stderr.write("Unable to open %s.\n" % infile)
             sys.exit(1)
 
@@ -184,8 +189,8 @@ if __name__ == "__main__":
             sys.stderr.write("Output file %s exists.\n" % outfile)
             sys.exit(1)
         try:
-            outf = open(outfile, 'w')
-        except:
+            outf = open(outfile, 'w', encoding='utf-8')
+        except OSError:
             sys.stderr.write("Unable to open %s.\n" % outfile)
             sys.exit(1)
 

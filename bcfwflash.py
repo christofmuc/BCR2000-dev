@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # 
 #  Unofficial Behringer Control Development Kit - firmware flash tool
 #
@@ -26,7 +26,7 @@
 import sys, getopt, os, glob, select
 
 __AUTHOR__  = "Willem van Engen <dev-bc2000@willem.engen.nl>"
-__VERSION__ = "2010.08.27"
+__VERSION__ = "0.4.0"
 __LICENSE__ = "GPL version 2 or higher"
 
 _usage = r"""
@@ -62,16 +62,14 @@ class BCFWException(Exception):
     pass
 
 def array2str(x):
-    '''convert array of bytes to string'''
-    out = ''
-    for e in x: out += chr(e)
-    return out
+    '''convert an iterable of integers to bytes'''
+    return bytes(x)
 
 def str2array(x):
-    '''convert string to array of bytes'''
-    out = []
-    for e in x: out.append(ord(e))
-    return out
+    '''convert bytes or a Latin-1 string to a list of integers'''
+    if isinstance(x, str):
+        x = x.encode("latin-1")
+    return list(x)
 
 def midi_receive_sysex(f, timeout=0.2):
     '''return next sysex message from device, or None if timeout'''
@@ -81,7 +79,9 @@ def midi_receive_sysex(f, timeout=0.2):
         if not f.fileno() in select.select([f.fileno()],[],[],timeout)[0]:
             return None
         byte = f.read(1)
-        c = ord(byte)
+        if not byte:
+            raise BCFWException("midi device closed while receiving SysEx")
+        c = byte[0]
         if c == 0xf0:
             sysex = [c]
             insysex = True
@@ -97,12 +97,14 @@ def midi_check_sysex(sysex, cmds, exceptions = True):
     try:
         if not sysex:
             raise BCFWException("timeout waiting for flash blob from device")
+        if len(sysex) < 8 or sysex[0] != 0xf0 or sysex[-1] != 0xf7:
+            raise BCFWException("malformed SysEx response received")
         if not sysex[1:4] == [0x00, 0x20, 0x32]:
             raise BCFWException("unexpected sysex manufacturer received: 0x%02x,0x%02x,0x%02x"%(sysex[1],sysex[2],sysex[3]))
         if not sysex[6] in cmds:
             raise BCFWException("unexpected sysex response command received: 0x%02x"%sysex[6])
         return sysex[6]
-    except BCFWException, e:
+    except BCFWException as e:
         if not exceptions: return None
         raise e
 
@@ -128,7 +130,9 @@ def midi_detect(verbose=False, findall=False):
         recvd = midi_receive_sysex(devf,1)
         devf.close()
         if recvd and recvd[0:4] == [0xf0, 0x00, 0x20, 0x32]:
-            if verbose: sys.stderr.write("%s:\t%s\n"%(devname, array2str(recvd[7:-1])))
+            if verbose:
+                identity = bytes(recvd[7:-1]).decode("ascii", errors="replace")
+                sys.stderr.write("%s:\t%s\n"%(devname, identity))
             if not findall: return devname
             founddevnames.append(devname)
     if not findall: return None
@@ -143,15 +147,22 @@ def flash_upload(f, data):
     offset = 0
     nonsysexwarned = False
     while offset < len(data):
-        # start of current message
-        curoffset = offset
-        if data[offset] != 0xf0:
+        try:
+            curoffset = data.index(0xf0, offset)
+        except ValueError:
+            if not nonsysexwarned:
+                sys.stderr.write('warning: found non-sysex data (mentioning only once)\n')
+            break
+        if curoffset != offset:
             if not nonsysexwarned:
                 sys.stderr.write('warning: found non-sysex data (mentioning only once)\n')
                 nonsysexwarned = True
-            offset += data[offset:].index(0xf0)
-        # end of current message
-        offset += data[offset:].index(0xf7) + 1
+        try:
+            offset = data.index(0xf7, curoffset) + 1
+        except ValueError:
+            raise BCFWException("unterminated SysEx message in firmware data")
+        if offset - curoffset < 16:
+            raise BCFWException("firmware SysEx message is too short")
         # now send current message
         f.write(array2str(data[curoffset:offset]))
         f.flush()
@@ -198,7 +209,7 @@ def flash_get(f, addr, count):
     # first get all blobs required
     for curaddr in range(addr, addr+count, 0x100):
         sys.stderr.write('0x%06x-0x%06x\r'%(curaddr,curaddr+0x100))
-        data += flash_get_blob(f, curaddr/0x100)
+        data += flash_get_blob(f, curaddr//0x100)
     return data
 
 ##############################################################################
@@ -212,7 +223,7 @@ def syx_implode(data):
        each 8th byte contains high bits of preceding 7 inverted'''
     if len(data) % 8:
         raise BCFWException('length of sysex blob must be multiple of 8 but is 0x%x'%len(data))
-    out = [0] * (len(data)/8*7)
+    out = [0] * (len(data)//8*7)
     j = 0
     for i in range(len(data)):
         if i%8 == 7:
@@ -229,7 +240,7 @@ def syx_explode(data):
     if len(data) % 7:
         raise BCFWException('length of data to encode to sysex blob must be multiple of 7 but is 0x%x'%len(data))
     j = 0
-    out = [0] * (len(data)/7*8)
+    out = [0] * (len(data)//7*8)
     highbits = 0
     for byte in data:
         if byte & 0x80: highbits |= 1<<(6-(j%8))
@@ -263,7 +274,11 @@ def send_display(f, s):
     # construct packet argument
     arg  = [0xff, 0x00]             # special address
     arg += [0x00]                   # checksum (compute later)
-    arg += str2array(s[0:4])        # string
+    try:
+        display = s[0:4].encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise BCFWException("display string must contain ASCII characters") from exc
+    arg += str2array(display)       # string
     arg += [0]*(0x100-4)            # padding
     for i in arg[3:]: arg[2] = syx_checksum_update(i, arg[2])
     # construct packet
@@ -289,8 +304,8 @@ if __name__ == "__main__":
         sys.stderr.write(_usage)
         sys.exit(1)
 
-    inf             = sys.stdin
-    outf            = sys.stdout
+    inf             = sys.stdin.buffer
+    outf            = sys.stdout.buffer
     midif           = None
     infile          = None
     outfile         = None
@@ -310,7 +325,7 @@ if __name__ == "__main__":
         if o == "-d":
             midifile = a
         if o == "-s":
-            arange = map(lambda x: int(x,0), a.split('-'))
+            arange = [int(x,0) for x in a.split('-')]
         if o == "-u":
             actions.append('upload')
         if o == "-g":
@@ -368,7 +383,7 @@ if __name__ == "__main__":
             if os.path.exists(outfile) and not force_overwrite:
                 raise BCFWException("Output file %s exists.\n" % outfile)
             try:
-                outf = open(outfile, 'w')
+                outf = open(outfile, 'wb')
             except:
                 raise BCFWException("Unable to open %s.\n" % outfile)
         data = flash_get(midif, arange[0], arange[1]-arange[0])
@@ -389,7 +404,7 @@ if __name__ == "__main__":
         while len(display) < 4: display += ' '
         send_display(midif, display)
 
-  except BCFWException, e:
+  except BCFWException as e:
     sys.stderr.write(str(e)+'\n')
     sys.exit(1)
 

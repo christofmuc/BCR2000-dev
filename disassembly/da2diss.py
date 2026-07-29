@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Annotated ARM disassembler
 # 
@@ -24,8 +24,10 @@
 # containing comments and disassembling hints.
 #
 
-import sys, os, re, tempfile, getopt
+import sys, os, re, tempfile, getopt, shutil
 from subprocess import Popen, PIPE
+
+objdump = None
 
 _usage = r"""
 annotated ARM disassembler
@@ -48,8 +50,10 @@ def hexdump(filename, offset, count, width):
     for i in range(count):
         val = 0
         for j in range(width):
-            d = ord(f.read(1))
-            val += d << (j*8)
+            data = f.read(1)
+            if not data:
+                raise EOFError("binary file ended during hexdump")
+            val += data[0] << (j*8)
         if val == last:
             dupcount += 1
             b[-1] = format(last, '0%dx'%(width*2))+'*%d'%dupcount
@@ -66,7 +70,7 @@ def stringdump(filename, offset, count):
     f.seek(offset)
     s = f.read(count)
     f.close()
-    return '"'+s+'"'
+    return '"'+s.decode('latin-1')+'"'
 
 def disassemble(realbin, addr, count, offset, dopts, outbuf, linecomment):
     global objdump
@@ -74,7 +78,9 @@ def disassemble(realbin, addr, count, offset, dopts, outbuf, linecomment):
               '--disassembler-options='+dopts, '--adjust-vma=%d'%(offset), \
               '--start-address=%d'%(addr), '--stop-address=%d'%(addr+count), realbin]
     dstarted = False
-    for curline in Popen(execmd, stdout=PIPE).communicate()[0].splitlines():
+    for curline in Popen(
+        execmd, stdout=PIPE, text=True, encoding='utf-8', errors='replace'
+    ).communicate()[0].splitlines():
         if not dstarted:
             # skip header
             if curline.strip().startswith('%x:'%addr):
@@ -158,7 +164,7 @@ def parse_da(inf, bin, outf):
                 # objdump's adjust-vma option needs to be >0, so we create a new
                 # file start starts at a different position for this
                 realbin = bin+'.da2diss.tmp'
-                tmpfile = open(realbin, 'w')
+                tmpfile = open(realbin, 'wb')
                 orgfile = open(bin, 'rb')
                 orgfile.seek(-offset)
                 length = os.path.getsize(bin) + offset
@@ -253,8 +259,8 @@ if __name__ == "__main__":
     #
     if infile:
         try:
-            inf = open(infile, 'rb')
-        except:
+            inf = open(infile, 'r', encoding='utf-8')
+        except OSError:
             sys.stderr.write("Unable to open %s.\n" % infile)
             sys.exit(1)
 
@@ -263,13 +269,12 @@ if __name__ == "__main__":
             sys.stderr.write("Output file %s exists.\n" % outfile)
             sys.exit(1)
         try:
-            outf = open(outfile, 'w')
-        except:
+            outf = open(outfile, 'w', encoding='utf-8')
+        except OSError:
             sys.stderr.write("Unable to open %s.\n" % outfile)
             sys.exit(1)
 
-    global objdump
-    objdump = Popen(['which','objdump'], stdout=PIPE).communicate()[0].strip()
+    objdump = shutil.which('objdump')
     if not objdump:
         sys.stderr.write('Need to have objdump in PATH\n')
         sys.exit(1)

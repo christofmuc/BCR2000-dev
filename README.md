@@ -1,9 +1,39 @@
 # BCR2000-dev
 
+[![Python tests](https://github.com/christofmuc/BCR2000-dev/actions/workflows/python-tests.yml/badge.svg)](https://github.com/christofmuc/BCR2000-dev/actions/workflows/python-tests.yml)
+
 Unofficial Behringer Development Kit - Custom firmware
 ------------------------------------------------------
 
 Original web site : https://willem.engen.nl/projects/bc2000-dev/
+
+## Python tools
+
+The firmware conversion, flashing and disassembly-annotation tools support
+Python 3.10 and newer. They have no third-party Python dependencies.
+
+Run the complete test suite with:
+
+```console
+python -m unittest discover -s tests -v
+```
+
+The tests use synthetic firmware and do not redistribute Behringer code. An
+additional regression test can verify an official BCR2000 1.10 image supplied
+locally:
+
+```powershell
+$env:BCR2000_FIRMWARE = "C:\path\to\bcr2000_1-10.syx"
+python -m unittest discover -s tests -v
+```
+
+That test checks the known official file hash, decoded image hash, and exact
+SYX-to-OS-to-SYX round trip. GitHub Actions runs the distributable tests on
+Python 3.10, 3.12 and 3.14.
+
+`bcfwflash.py` still accesses Linux raw MIDI device files such as
+`/dev/snd/midiC1D0`; its protocol logic is tested without MIDI hardware, but
+live flashing remains Linux-specific.
 
 This file should help you get going to developing your own software for the
 Behring Control devices. While not everything is known about how the devices

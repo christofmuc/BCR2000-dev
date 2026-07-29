@@ -34,7 +34,7 @@ need to obtain the bootloader binary from your device yourself:
 
 Now you can merge these into in an annotated disassembly dump by running
 
-  $ ./da2diss.py -i bootloader_bcf.da bootloader_bcf.bin >bootloader_bcf.diss
+  $ ./da2diss.py -i bootloader_bcr.da bootloader_bcr.bin >bootloader_bcr.diss
 
 
 ** Creating an initial disassembly

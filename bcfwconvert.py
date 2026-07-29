@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Unofficial Behringer Control Development Kit - firmware conversion tool
 # 
@@ -22,7 +22,7 @@
 import sys, getopt, os
 
 __AUTHOR__  = "Willem van Engen <dev-bc2000@willem.engen.nl>"
-__VERSION__ = "2010.08.25"
+__VERSION__ = "0.4.0"
 __LICENSE__ = "GPL version 2 or higher"
 
 _usage = r"""
@@ -58,16 +58,12 @@ def wpack(x, offs=0):
     return [ (x>> 0)&0xff, (x>> 8)&0xff, (x>>16)&0xff, (x>>24)&0xff ]
 
 def array2str(x):
-    '''convert array of bytes to string'''
-    out = ''
-    for e in x: out += chr(e)
-    return out
+    '''convert an iterable of integers to bytes'''
+    return bytes(x)
 
 def str2array(x):
-    '''convert string to array of bytes'''
-    out = []
-    for e in x: out.append(ord(e))
-    return out
+    '''convert bytes to a list of integers'''
+    return list(x)
 
 ##############################################################################
 ## Sysex handling
@@ -77,7 +73,7 @@ def syx_implode(data):
        each 8th byte contains high bits of preceding 7 inverted'''
     if len(data) % 8:
         raise BCFWException('length of sysex blob must be multiple of 8 but is 0x%x'%len(data))
-    out = [0] * (len(data)/8*7)
+    out = [0] * (len(data)//8*7)
     j = 0
     for i in range(len(data)):
         if i%8 == 7:
@@ -94,7 +90,7 @@ def syx_explode(data):
     if len(data) % 7:
         raise BCFWException('length of data to encode to sysex blob must be multiple of 7 but is 0x%x'%len(data))
     j = 0
-    out = [0] * (len(data)/7*8)
+    out = [0] * (len(data)//7*8)
     highbits = 0
     for byte in data:
         if byte & 0x80: highbits |= 1<<(6-(j%8))
@@ -150,28 +146,24 @@ def syx_decode_write(data, dmagic):
 #
 # checksum is computed over firmware page (3..258)
 
-_offs=0
 def syx_parse_packet(idata, lastaddr):
     '''process a single chunk of firmware packet data.
        If the argument doFlashDecipher is True, then also do the deciphering
        that happens only when writing but not when reading from the device.'''
-    global _offs # hack
     if len(idata) != 296:
         raise BCFWException("wrong length: 0x%x should be 0x%x"%(len(idata),296))
     odata = syx_decode(syx_implode(idata))
-    address = ( (odata[0]<<7) + odata[1] ) * 0x100
+    address = ((odata[0] << 8) + odata[1]) * 0x100
     origsum = odata[2]
     odata = odata[3:]
     # make sure address is right
     if lastaddr and address!=lastaddr+0x100:
         raise BCFWException("No jump in firmware addresses allowed: 0x%05x->0x%05x"%(lastaddr,address))
-        #sys.stderr.write('New address 0x%05x at offset 0x%06x\n'%(address<<8, _offs))
-    _offs+=0x100
     # and verify checksum
     checksum = 0
     for b in odata: checksum = syx_checksum_update(b, checksum)
     if checksum != origsum:
-        raise BCFWException("Checksum error: 0x%x should be 0x%x"%(checksum,odata[2]))
+        raise BCFWException("Checksum error: 0x%x should be 0x%x"%(checksum,origsum))
     return odata, address
 
 def syx2dump(idata):
@@ -218,7 +210,9 @@ def syx2dump(idata):
     if command == 0x34:
         # TODO also handle non-4k-aligned
         for i in range(0, len(odata), 0x1000):
-            odata[i:i+0x1000] = syx_decode_write(odata[i:i+0x1000], (i+addr[0])/0x1000)
+            odata[i:i+0x1000] = syx_decode_write(
+                odata[i:i+0x1000], (i+addr[0])//0x1000
+            )
     return odata
 
 
@@ -235,13 +229,14 @@ def dump2syx(idata, base, model):
     idata = idata + [0] * ((0x1000 - (len(idata)%0x1000))%0x1000)
     # flash in 0x1000=4k byte sectors
     for page in range(0, len(idata), 0x1000):
-        sector = syx_decode_write(idata[page:page+0x1000], (base+page)/0x1000)
+        sector = syx_decode_write(idata[page:page+0x1000], (base+page)//0x1000)
         # packet size of 0x100
         for subpage in range(0, 0x1000, 0x100):
             # construct argument to firmware upload command
             arg = [0] * 0x103
-            arg[0] = ((base+page+subpage)/0x100) >> 8
-            arg[1] = ((base+page+subpage)/0x100) & 0xff
+            packet_address = (base+page+subpage)//0x100
+            arg[0] = packet_address >> 8
+            arg[1] = packet_address & 0xff
             arg[3:0x103] = sector[subpage:subpage+0x100]
             # compute checksum
             for b in arg[3:]: arg[2] = syx_checksum_update(b, arg[2])
@@ -274,7 +269,7 @@ def dump2os(idata):
     origsum = os_decodeword(wunpack(idata[4:8]), 1)
     #sys.stderr.write("header: size=0x%x, checksum=0x%x\n"%(size, origsum))
     # make sure size matches
-    if size <= 0 or ((size+3)/4)*4+0x2008 > 0x7ffff:
+    if size <= 0 or ((size+3)//4)*4+0x2008 > 0x7ffff:
         raise BCFWException("Bad size field: 0x%x must be between 0 and 0x%x"%(size, 0x7ffff-0x2008));
     # and process the data
     odata = [0] * size
@@ -283,7 +278,7 @@ def dump2os(idata):
     for offset in range(8, size+8, 4):
         # deobfuscate
         word = wunpack(idata[offset:offset+4])
-        word = os_decodeword(word, offset/4)
+        word = os_decodeword(word, offset//4)
         odata[offset-8:offset-8+4]=wpack(word)
         # and update checksum
         if dmagic & 1: dmagic |= 1<<32
@@ -293,13 +288,13 @@ def dump2os(idata):
     checksum &= 0xffffffff
     if checksum != origsum:
         raise BCFWException("Corrupt image: checksum mismatch 0x%x should be 0x%x"%(checksum, origsum))
-    return odata
+    return odata[:size]
 
 def os2dump(idata):
     '''convert an os image to a flashdump portion'''
     size = len(idata)
     # length validation and checksum
-    if size <= 0 or ((size+3)/4)*4+0x2008 > 0x7ffff:
+    if size <= 0 or ((size+3)//4)*4+0x2008 > 0x7ffff:
         raise BCFWException("Bad size: 0x%x must be between 0 and 0x%x"%(size, 0x7ffff-0x2008));
     # fill 4k page with 0xff as official firmware does
     #idata = idata + [0] * (4-(len(idata)%4))
@@ -312,7 +307,7 @@ def os2dump(idata):
     for offset in range(0, len(idata), 4):
         # obfuscate
         word = wunpack(idata[offset:offset+4])
-        newword = os_decodeword(word, offset/4+2)
+        newword = os_decodeword(word, offset//4+2)
         odata[offset+8:offset+8+4]=wpack(newword)
         # and compute checksum (but not for filler bytes)
         if offset < size:
@@ -339,8 +334,8 @@ if __name__ == "__main__":
         sys.stderr.write(_usage)
         sys.exit(1)
 
-    inf             = sys.stdin
-    outf            = sys.stdout
+    inf             = sys.stdin.buffer
+    outf            = sys.stdout.buffer
     infile          = None
     outfile         = None
     informat        = None
@@ -417,7 +412,7 @@ if __name__ == "__main__":
             sys.stderr.write("Output file %s exists.\n" % outfile)
             sys.exit(1)
         try:
-            outf = open(outfile, 'w')
+            outf = open(outfile, 'wb')
         except:
             sys.stderr.write("Unable to open %s.\n" % outfile)
             sys.exit(1)
@@ -463,7 +458,7 @@ if __name__ == "__main__":
 
     outf.write(array2str(data))
 
-  except BCFWException, e:
+  except BCFWException as e:
     sys.stderr.write(str(e)+'\n')
     sys.exit(1)
 
