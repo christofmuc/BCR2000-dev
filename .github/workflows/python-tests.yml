@@ -22,6 +22,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Compile Python sources
         run: python -m compileall -q .
+      - name: Download known BCR2000 1.10 firmware
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          firmware="$RUNNER_TEMP/bcr2000_1-10.syx"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://mountainutilities.eu/sites/default/files/user/b-control/Firmware/bcr2000_1-10.syx" \
+            --output "$firmware"
+          echo "9ebef1c75aa07d00613a20fb8cd9d58dbcfa9f076f1d8657904e3a6a669bae1d  $firmware" \
+            | sha256sum --check -
+          echo "BCR2000_FIRMWARE=$firmware" >> "$GITHUB_ENV"
       - name: Run tests
         run: python -m unittest discover -s tests -v
-

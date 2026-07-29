@@ -29,7 +29,12 @@ python -m unittest discover -s tests -v
 
 That test checks the known official file hash, decoded image hash, and exact
 SYX-to-OS-to-SYX round trip. GitHub Actions runs the distributable tests on
-Python 3.10, 3.12 and 3.14.
+Python 3.10, 3.12 and 3.14. The Python 3.12 job downloads the firmware from
+the public
+[Mountain Utilities B-Control archive](https://mountainutilities.eu/userfiles/b-control?fid=6),
+verifies its pinned SHA-256 hash, and enables the official-image regression
+test. The downloaded file exists only in the ephemeral Actions runner and is
+not published as an artifact.
 
 `bcfwflash.py` still accesses Linux raw MIDI device files such as
 `/dev/snd/midiC1D0`; its protocol logic is tested without MIDI hardware, but
